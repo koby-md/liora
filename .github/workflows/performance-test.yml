@@ -1,107 +1,54 @@
-name: Performance Test
+name: Deploy
 
 on:
-    push:
-        branches: ["main"]
-        paths-ignore:
-            - "**.md"
-            - "docs/**"
-    pull_request:
-        branches: ["main"]
-        paths-ignore:
-            - "**.md"
-            - "docs/**"
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 */6 * * *"  # تشغيل كل 6 ساعات
 
 jobs:
-    benchmark:
-        name: Performance Benchmarks
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
 
-            - name: Setup Bun
-              uses: oven-sh/setup-bun@v2
-              with:
-                  bun-version: latest
+    permissions:
+      id-token: write
+      contents: read
+      actions: write
 
-            - name: Setup Rust
-              uses: dtolnay/rust-toolchain@stable
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
 
-            - name: Install system dependencies
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y \
-                    ffmpeg \
-                    libwebp-dev \
-                    libavformat-dev \
-                    libavcodec-dev \
-                    libavutil-dev \
-                    libswresample-dev \
-                    libswscale-dev \
-                    libavfilter-dev \
-                    build-essential \
-                    python3 \
-                    g++ \
-                    pkg-config \
-                    cmake
+      - name: Install Node.js 20
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          nvm install 20
+          nvm use 20
+          node -v
 
-            - name: Install Bun dependencies
-              run: bun install --frozen-lockfile
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
-            - name: Cache Cargo
-              uses: actions/cache@v4
-              with:
-                  path: |
-                      ~/.cargo/bin/
-                      ~/.cargo/registry/index/
-                      ~/.cargo/registry/cache/
-                      ~/.cargo/git/db/
-                      lib/rs/target/
-                  key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '.github/workflows/*.yml') }}
-                  restore-keys: |
-                      ${{ runner.os }}-cargo-
+      - name: Install Dependencies
+        run: npm install
 
-            - name: Run Rust benchmarks
-              working-directory: ./lib/rs
-              run: |
-                  # Build benchmarks first
-                  cargo bench --no-run
-                  
-                  # Run benchmarks and save results
-                  echo "🚀 Running performance benchmarks..."
-                  cargo bench 2>&1 | tee ../../bench-results.txt
-                  
-                  # Check if benchmarks ran successfully
-                  if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                    echo "🔥 Benchmarks completed successfully"
-                  else
-                    echo "⚠️ Benchmarks had issues, but continuing..."
-                  fi
+      - name: Install FFmpeg
+        run: sudo apt install -y ffmpeg
 
-            - name: Upload benchmark results
-              uses: actions/upload-artifact@v4
-              with:
-                  name: benchmark-results
-                  path: bench-results.txt
-                  retention-days: 7
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.11.0
+        with:
+          access_token: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Comment PR with results
-              if: github.event_name == 'pull_request'
-              uses: actions/github-script@v7
-              with:
-                  script: |
-                      const fs = require('fs');
-                      try {
-                          const results = fs.readFileSync('bench-results.txt', 'utf8');
-                          const shortResults = results.split('\n').slice(-50).join('\n'); // Ambil 50 baris terakhir
-                          
-                          await github.rest.issues.createComment({
-                            owner: context.repo.owner,
-                            repo: context.repo.repo,
-                            issue_number: context.issue.number,
-                            body: `## 📊 Performance Benchmark Results\n\n\`\`\`\n${shortResults}\n\`\`\`\n\n[View full results](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`
-                          });
-                      } catch (error) {
-                          console.log('Could not read benchmark results:', error.message);
-                      }
+      - name: Start Project
+        run: npm run start
