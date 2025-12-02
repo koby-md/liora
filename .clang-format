@@ -1,7 +1,4 @@
-# ============================================
-# clang-format Configuration for Liora
-# C++ Code Style (similar to Prettier)
-# ============================================
+
 
 BasedOnStyle: Google
 Language: Cpp
